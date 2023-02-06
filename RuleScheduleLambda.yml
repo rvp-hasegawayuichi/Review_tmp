@@ -1,0 +1,230 @@
+# elb-rule-schedule-lmd
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Lambda Function, Lambda Permission, BridgeScheduler, and IAM."
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project SystemCode(3 letters of the alphabet)"
+        Parameters:
+          - SystemCode
+      - Label:
+          default: "EnvironmentCode(prd, stg, dev)"
+        Parameters:
+          - Env
+
+Parameters:
+  SystemCode:
+    Type: String
+    MinLength: 3
+    MaxLength: 3
+    Default: "kpd"
+
+  Env:
+    Type: String
+    AllowedValues: [ prd, stg, dev, prd2, prd3, stg2, stg3, stg4, dev2, dev3, edu ]
+
+  ScheduleExpressionCronSchedulerToggleAllowRule:
+    Type: String
+    Default: "cron(00 7 * * ? *)"
+
+  ScheduleExpressionCronSchedulerToggleDenyRule:
+    Type: String
+    Default: "cron(00 22 * * ? *)"
+
+  ApplicationLoadBalancerListenerRuleArn:
+    Type: String
+    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:778678440966:listener-rule/app/ruletest-loadbalancer/79d1c858bdb8f752/96928bdb20e1cc7f/5de8d83dda94d05d"
+
+Resources:
+  RoleRuleScheduleLambda:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "role-lmd-${SystemCode}-${Env}-toggle-listenerrule"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+
+  IAMInlinePolicy001RoleRuleScheduleLambda:
+    Type: "AWS::IAM::Policy"
+    DependsOn: RoleRuleScheduleLambda
+    Properties:
+      PolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "VisualEditor0",
+              "Effect": "Allow",
+              "Action": "elasticloadbalancing:ModifyRule",
+              "Resource": "*"
+            }
+          ]
+        }
+      Roles: 
+        - !Sub "role-lmd-${SystemCode}-${Env}-toggle-listenerrule"
+      PolicyName: "inline-001"
+
+  RuleScheduleLambda:
+    Type: "AWS::Lambda::Function"
+    DependsOn: RoleRuleScheduleLambda
+    Properties:
+      Description: ""
+      FunctionName: !Sub "lmd-${SystemCode}-${Env}-toggle-listenerrule"
+      Handler: "index.lambda_handler"
+      Architectures: 
+        - "x86_64"
+      Code:
+        ZipFile: |
+          import os
+
+          import boto3
+
+
+          def lambda_handler(event: dict, context: dict):
+              """"""
+              change_listener_rule_mode(event["action"])
+
+
+          def change_listener_rule_mode(mode: str):
+              """"""
+              rule_arn = os.environ["RULE_ARN"]
+              if mode == "deny":
+                  modify_deny_listener_rule(rule_arn)
+              elif mode == "allow":
+                  modify_allow_listener_rule(rule_arn)
+              else:
+                  raise ValueError("Unexpected action.")
+
+
+          def modify_deny_listener_rule(rule_arn: str):
+              """"""
+              source_ip_config = "0.0.0.0/0"
+              condition = get_condition(source_ip_config)
+              modify_listener_rule(rule_arn, condition)
+
+
+          def modify_allow_listener_rule(rule_arn: str):
+              """"""
+              source_ip_config = "0.0.0.0/32"
+              condition = get_condition(source_ip_config)
+              modify_listener_rule(rule_arn, condition)
+
+
+          def modify_listener_rule(rule_arn: str, condition: list):
+              """"""
+              client = boto3.client('elbv2')
+              client.modify_rule(
+                  RuleArn=rule_arn,
+                  Conditions=condition
+              )
+
+
+          def get_condition(source_ip_config: str) -> list:
+              """"""
+              return [{
+                  "Field": "path-pattern", "Values": ["/*"]},
+                  {
+                      "Field": "source-ip",
+                      "SourceIpConfig":
+                          {
+                              "Values": [source_ip_config]
+                          }
+                  }]
+      Environment:
+        Variables:
+          RULE_ARN: !Ref ApplicationLoadBalancerListenerRuleArn
+      MemorySize: 128
+      Role: !GetAtt RoleRuleScheduleLambda.Arn
+      Runtime: "python3.9"
+      Timeout: 3
+      TracingConfig:
+        Mode: "PassThrough"
+      EphemeralStorage: 
+        Size: 512
+      Timeout: 5
+
+  RoleEventBridgeScheduler:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "role-${SystemCode}-${Env}-scheduler-toggle-listenerrule"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - scheduler.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+
+  IAMInlinePolicy001RoleEventBridgeScheduler:
+    Type: "AWS::IAM::Policy"
+    DependsOn: RoleEventBridgeScheduler
+    Properties:
+      PolicyDocument: 
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "VisualEditor0",
+              "Effect": "Allow",
+              "Action": ["lambda:InvokeFunction"],
+              "Resource": ["*"]
+            }
+          ]
+        }
+      Roles:
+        - !Sub "role-${SystemCode}-${Env}-scheduler-toggle-listenerrule"
+      PolicyName: "inline-001"
+
+  EventBridgeSchedulerToggleAllowRule:
+    Type: "AWS::Scheduler::Schedule"
+    Properties:
+      Name: !Sub "scheduler-lmd-${SystemCode}-${Env}-toggle-listenerrule-allow"
+      ScheduleExpression: !Ref ScheduleExpressionCronSchedulerToggleAllowRule
+      ScheduleExpressionTimezone: "Asia/Tokyo"
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      State: ENABLED
+      Target:
+        Arn: !GetAtt RuleScheduleLambda.Arn
+        RoleArn: !GetAtt RoleEventBridgeScheduler.Arn
+        RetryPolicy: 
+          MaximumRetryAttempts: 0
+        Input: !Sub |
+          {
+            "action": "allow"
+          }
+
+  EventBridgeSchedulerToggleDenyRule:
+    Type: "AWS::Scheduler::Schedule"
+    Properties:
+      Name: !Sub "scheduler-lmd-${SystemCode}-${Env}-toggle-listenerrule-deny"
+      ScheduleExpression: !Ref ScheduleExpressionCronSchedulerToggleDenyRule
+      ScheduleExpressionTimezone: "Asia/Tokyo"
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      State: ENABLED
+      Target:
+        Arn: !GetAtt RuleScheduleLambda.Arn
+        RoleArn: !GetAtt RoleEventBridgeScheduler.Arn
+        RetryPolicy: 
+          MaximumRetryAttempts: 0
+        Input: !Sub |
+          {
+            "action": "deny"
+          }
