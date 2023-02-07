@@ -1,6 +1,6 @@
 # elb-rule-schedule-lmd
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Lambda Function, Lambda Permission, BridgeScheduler, and IAM."
+Description: "Lambda Function, Lambda Permission, EventBridge Schedule, and IAM."
 
 # ------------------------------------------------------------#
 # Input Parameters
@@ -38,13 +38,13 @@ Parameters:
 
   ApplicationLoadBalancerListenerRuleArn:
     Type: String
-    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:778678440966:listener-rule/app/ruletest-loadbalancer/79d1c858bdb8f752/96928bdb20e1cc7f/5de8d83dda94d05d"
+    Description: "Specify the ARN of the ALB listener rule to be changed."
 
 Resources:
   RoleRuleScheduleLambda:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub "role-lmd-${SystemCode}-${Env}-toggle-listenerrule"
+      RoleName: !Sub "role-${SystemCode}-${Env}-lmd-toggle-listenerrule"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -74,10 +74,11 @@ Resources:
           ]
         }
       Roles: 
-        - !Sub "role-lmd-${SystemCode}-${Env}-toggle-listenerrule"
+        # - !Sub "role-${SystemCode}-${Env}-lmd-toggle-listenerrule"
+        - !Ref RoleRuleScheduleLambda
       PolicyName: "inline-001"
 
-  RuleScheduleLambda:
+  LambdaRuleSchedule:
     Type: "AWS::Lambda::Function"
     DependsOn: RoleRuleScheduleLambda
     Properties:
@@ -89,7 +90,6 @@ Resources:
       Code:
         ZipFile: |
           import os
-
           import boto3
 
 
@@ -159,7 +159,7 @@ Resources:
   RoleEventBridgeScheduler:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub "role-${SystemCode}-${Env}-scheduler-toggle-listenerrule"
+      RoleName: !Sub "role-${SystemCode}-${Env}-eb-rule-toggle-listenerrule"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -188,20 +188,21 @@ Resources:
           ]
         }
       Roles:
-        - !Sub "role-${SystemCode}-${Env}-scheduler-toggle-listenerrule"
+        # - !Sub "role-${SystemCode}-${Env}-eb-rule-toggle-listenerrule"
+        - !Ref RoleEventBridgeScheduler
       PolicyName: "inline-001"
 
   EventBridgeSchedulerToggleAllowRule:
     Type: "AWS::Scheduler::Schedule"
     Properties:
-      Name: !Sub "scheduler-lmd-${SystemCode}-${Env}-toggle-listenerrule-allow"
+      Name: !Sub "eb-rule-${SystemCode}-${Env}-toggle-listenerrule-allow"
       ScheduleExpression: !Ref ScheduleExpressionCronSchedulerToggleAllowRule
       ScheduleExpressionTimezone: "Asia/Tokyo"
       FlexibleTimeWindow:
         Mode: "OFF"
       State: ENABLED
       Target:
-        Arn: !GetAtt RuleScheduleLambda.Arn
+        Arn: !GetAtt LambdaRuleSchedule.Arn
         RoleArn: !GetAtt RoleEventBridgeScheduler.Arn
         RetryPolicy: 
           MaximumRetryAttempts: 0
@@ -213,14 +214,14 @@ Resources:
   EventBridgeSchedulerToggleDenyRule:
     Type: "AWS::Scheduler::Schedule"
     Properties:
-      Name: !Sub "scheduler-lmd-${SystemCode}-${Env}-toggle-listenerrule-deny"
+      Name: !Sub "eb-rule-${SystemCode}-${Env}-toggle-listenerrule-deny"
       ScheduleExpression: !Ref ScheduleExpressionCronSchedulerToggleDenyRule
       ScheduleExpressionTimezone: "Asia/Tokyo"
       FlexibleTimeWindow:
         Mode: "OFF"
       State: ENABLED
       Target:
-        Arn: !GetAtt RuleScheduleLambda.Arn
+        Arn: !GetAtt LambdaRuleSchedule.Arn
         RoleArn: !GetAtt RoleEventBridgeScheduler.Arn
         RetryPolicy: 
           MaximumRetryAttempts: 0

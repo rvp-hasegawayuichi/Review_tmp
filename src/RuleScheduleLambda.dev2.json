@@ -1,0 +1,9 @@
+{
+    "Parameters": {
+        "SystemCode": "kpd",
+        "Env": "dev2",
+        "ScheduleExpressionCronSchedulerToggleAllowRule": "cron(00 7 * * ? *)",
+        "ScheduleExpressionCronSchedulerToggleDenyRule": "cron(00 22 * * ? *)",
+        "ApplicationLoadBalancerListenerRuleArn": "arn:aws:elasticloadbalancing:ap-northeast-1:778678440966:listener-rule/app/ruletest-loadbalancer/79d1c858bdb8f752/96928bdb20e1cc7f/5de8d83dda94d05d"
+    }
+}
